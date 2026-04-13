@@ -124,3 +124,6 @@ artifacts/
 # Backend uploads
 backend/uploads/*
 !backend/uploads/.gitkeep
+
+# Backend data (DB)
+backend/data/
