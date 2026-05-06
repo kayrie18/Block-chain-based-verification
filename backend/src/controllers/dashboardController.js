@@ -2,7 +2,6 @@ const fs = require("fs/promises");
 const path = require("path");
 const { Document } = require("../models/Document");
 const { User } = require("../models/User");
-const { AuditLog } = require("../models/AuditLog");
 const { getLocalUploadDir } = require("../services/storageService");
 
 function formatBytes(bytes) {
@@ -36,16 +35,10 @@ async function getUploadDirSize() {
 
 async function getMetrics(req, res, next) {
   try {
-    const filter = {};
-    if (req.auth && req.auth.role === "Issuer") {
-      filter.uploadedBy = req.auth.userId;
-    }
-
-    const totalDocuments = await Document.countDocuments(filter);
+    const totalDocuments = await Document.countDocuments();
     const issuerCount = await User.countDocuments({ role: "Issuer" });
-    const verifiedDocuments = await Document.countDocuments({ ...filter, "blockchain.confirmed": true });
+    const verifiedDocuments = await Document.countDocuments({ "blockchain.confirmed": true });
     const aggregate = await Document.aggregate([
-      { $match: filter },
       { $group: { _id: null, totalBytes: { $sum: "$sizeBytes" } } },
     ]);
     const storedBytes = aggregate?.[0]?.totalBytes || 0;
@@ -70,22 +63,23 @@ async function getMetrics(req, res, next) {
 
 async function getAuditLog(req, res, next) {
   try {
-    const logs = await AuditLog.find()
-      .sort({ timestamp: -1 })
-      .limit(20)
+    const documents = await Document.find()
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .populate("uploadedBy", "name email")
       .lean();
 
-    const formattedLogs = logs.map((log) => ({
-      id: log._id.toString(),
-      userId: log.userId?.toString() || null,
-      userName: log.userName,
-      action: log.action,
-      details: log.details,
-      timestamp: log.timestamp,
-      type: log.type,
+    const logs = documents.map((doc) => ({
+      id: doc._id.toString(),
+      userId: doc.uploadedBy?._id?.toString() || null,
+      userName: doc.uploadedBy?.name || "Unknown",
+      action: "Document Uploaded",
+      details: `${doc.title} uploaded for ${doc.ownerName} by ${doc.issuingOrganization}`,
+      timestamp: doc.createdAt,
+      type: doc.blockchain?.confirmed ? "success" : "warning",
     }));
 
-    return res.status(200).json({ logs: formattedLogs });
+    return res.status(200).json({ logs });
   } catch (err) {
     return next(err);
   }

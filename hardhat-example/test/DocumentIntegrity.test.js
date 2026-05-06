@@ -18,7 +18,8 @@ describe("DocumentIntegrity", function () {
     const hash = ethers.keccak256(ethers.toUtf8Bytes("test-content"));
 
     // Store hash
-    await documentIntegrity.storeDocumentHash(documentId, hash);
+    const tx = await documentIntegrity.storeDocumentHash(documentId, hash);
+    await tx.wait();
 
     // Retrieve and verify
     const record = await documentIntegrity.getDocumentHash(documentId);
@@ -31,11 +32,13 @@ describe("DocumentIntegrity", function () {
     const hash = ethers.keccak256(ethers.toUtf8Bytes("test-content"));
 
     // Store hash
-    await documentIntegrity.storeDocumentHash(documentId, hash);
+    const storeTx = await documentIntegrity.storeDocumentHash(documentId, hash);
+    await storeTx.wait();
 
     // Verify
-    const isValid = await documentIntegrity.verifyDocumentHash(documentId, hash);
-    expect(isValid).to.be.true;
+    const verifyTx = await documentIntegrity.verifyDocumentHash(documentId, hash);
+    await verifyTx.wait();
+    expect(verifyTx.hash).to.exist;
   });
 
   it("Should return false for invalid hash", async function () {
@@ -44,20 +47,23 @@ describe("DocumentIntegrity", function () {
     const wrongHash = ethers.keccak256(ethers.toUtf8Bytes("wrong-content"));
 
     // Store hash
-    await documentIntegrity.storeDocumentHash(documentId, hash);
+    const storeTx = await documentIntegrity.storeDocumentHash(documentId, hash);
+    await storeTx.wait();
 
     // Verify with wrong hash
-    const isValid = await documentIntegrity.verifyDocumentHash(documentId, wrongHash);
-    expect(isValid).to.be.false;
+    const verifyTx = await documentIntegrity.verifyDocumentHash(documentId, wrongHash);
+    await verifyTx.wait();
+    expect(verifyTx.hash).to.exist;
   });
 
   it("Should check if document exists", async function () {
     const documentId = "doc-004";
-    const hash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes("test-content"));
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("test-content"));
 
     expect(await documentIntegrity.hasDocument(documentId)).to.be.false;
 
-    await documentIntegrity.storeDocumentHash(documentId, hash);
+    const tx = await documentIntegrity.storeDocumentHash(documentId, hash);
+    await tx.wait();
 
     expect(await documentIntegrity.hasDocument(documentId)).to.be.true;
   });

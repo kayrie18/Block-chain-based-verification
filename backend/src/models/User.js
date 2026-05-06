@@ -28,7 +28,8 @@ const userSchema = new mongoose.Schema(
       default: ROLES.User,
     },
     organization: { type: String, trim: true, maxlength: 255, default: null },
-    profilePicture: { type: String, default: null },
+    isVerifierApproved: { type: Boolean, default: false },
+    profilePictureUrl: { type: String, default: null },
   },
   { timestamps: true }
 );
@@ -69,7 +70,8 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     email: this.email,
     role: this.role,
     organization: this.organization || null,
-    profilePicture: this.profilePicture || null,
+    isVerifierApproved: this.isVerifierApproved || false,
+    profilePictureUrl: this.profilePictureUrl || null,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };

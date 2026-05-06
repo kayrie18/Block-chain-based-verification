@@ -12,11 +12,19 @@ async function getLogs(req, res, next) {
     const skip = (page - 1) * limit;
 
     const filter = {};
+    
+    // Isolation: Users can only see their own logs unless they are Admin.
+    if (req.auth.role !== "Admin") {
+      filter.userId = req.auth.userId;
+    } else {
+      // Admins can filter by userId if provided in query, otherwise they see all.
+      if (req.query.userId) {
+        filter.userId = req.query.userId;
+      }
+    }
+
     if (req.query.type) {
       filter.type = req.query.type;
-    }
-    if (req.query.userId) {
-      filter.userId = req.query.userId;
     }
 
     const [logs, total] = await Promise.all([

@@ -1,13 +1,11 @@
 const { User, ROLES } = require("../models/User");
 const { signAuthToken } = require("../utils/jwt");
-const { logAction } = require("./auditController");
 
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
 
 function isValidEmail(email) {
-  if (email === "admin") return true;
   // Intentionally simple; frontend can enforce stricter rules.
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -44,15 +42,6 @@ async function register(req, res, next) {
     await user.save();
 
     const token = signAuthToken({ userId: user._id.toString(), role: user.role });
-
-    await logAction({
-      userId: user._id,
-      userName: user.name,
-      action: "User Registration",
-      details: `New account created with role: ${user.role}`,
-      type: "success",
-    });
-
     return res.status(201).json({ user: user.toSafeJSON(), token });
   } catch (err) {
     // Handle duplicate email race
@@ -84,15 +73,6 @@ async function login(req, res, next) {
     }
 
     const token = signAuthToken({ userId: user._id.toString(), role: user.role });
-
-    await logAction({
-      userId: user._id,
-      userName: user.name,
-      action: "User Login",
-      details: `User logged in successfully`,
-      type: "success",
-    });
-
     return res.status(200).json({ user: user.toSafeJSON(), token });
   } catch (err) {
     return next(err);

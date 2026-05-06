@@ -1,6 +1,5 @@
 const { storeDocumentHashOnChain, getDocumentHashFromChain } = require("../services/blockchainService");
 const { Document } = require("../models/Document");
-const { Block } = require("../models/Block");
 
 async function storeHash(req, res, next) {
   try {
@@ -68,47 +67,5 @@ async function getHash(req, res, next) {
   }
 }
 
-async function getBlockchainRecords(req, res, next) {
-  try {
-    const parsedLimit = Number(req.query?.limit);
-    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 20;
-
-    const blocks = await Block.find({ "data.documentId": { $ne: "GENESIS" } })
-      .sort({ index: -1 })
-      .limit(limit)
-      .lean()
-      .exec();
-
-    const docIds = blocks.map((b) => b.data.documentId);
-    const docs = await Document.find({ _id: { $in: docIds } })
-      .select("title ownerName")
-      .lean()
-      .exec();
-
-    const docMap = {};
-    for (const d of docs) {
-      docMap[String(d._id)] = d;
-    }
-
-    return res.status(200).json({
-      records: blocks.map((b) => {
-        const d = docMap[b.data.documentId];
-        return {
-          id: String(b._id),
-          title: d?.title || `Block #${b.index}`,
-          ownerName: d?.ownerName || "Blockchain Network",
-          sha256Hash: b.data.sha256HashHex,
-          transactionId: b.hash,
-          blockNumber: b.index,
-          timestamp: b.timestamp,
-          confirmed: true,
-        };
-      }),
-    });
-  } catch (err) {
-    return next(err);
-  }
-}
-
-module.exports = { storeHash, getHash, getBlockchainRecords };
+module.exports = { storeHash, getHash };
 
