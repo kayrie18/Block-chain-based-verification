@@ -6,6 +6,8 @@ export interface User {
   email: string;
   role: UserRole;
   organization?: string;
+  profilePictureUrl?: string;
+  isVerifierApproved?: boolean;
 }
 
 export interface DocumentMetadata {

@@ -1,7 +1,6 @@
 const express = require("express");
-const { uploadDocument } = require("../controllers/documentController");
-const { getDocumentHash, verifyDocumentHash } = require("../controllers/hashController");
-const { requireAuth, requireRole } = require("../middleware/auth");
+const { uploadDocument, downloadDocument, revokeDocument, viewDocument } = require("../controllers/documentController");
+const { requireAuth, requireRole, attachUser, requireApprovedVerifier } = require("../middleware/auth");
 const { upload } = require("../middleware/upload");
 
 const router = express.Router();
@@ -11,16 +10,26 @@ const router = express.Router();
 router.post(
   "/upload",
   requireAuth,
-  requireRole("Admin", "Issuer", "User"),
+  attachUser,
+  requireRole("Admin", "Issuer", "Verifier"),
+  requireApprovedVerifier,
   upload.single("document"),
   uploadDocument
 );
 
-// GET /api/documents/:id/hash
-router.get("/:id/hash", requireAuth, getDocumentHash);
+// GET /api/documents/:id/download (Secure access control)
+router.get("/:id/download", requireAuth, attachUser, requireRole("Admin", "Issuer", "User", "Verifier"), downloadDocument);
 
-// GET /api/documents/:id/verify-hash?hash=<sha256hex>
-router.get("/:id/verify-hash", requireAuth, verifyDocumentHash);
+// GET /api/documents/:id/view (Inline preview)
+router.get("/:id/view", requireAuth, attachUser, requireRole("Admin", "Issuer", "User", "Verifier"), viewDocument);
+
+// PATCH /api/documents/:id/revoke (Advanced feature)
+router.patch("/:id/revoke", requireAuth, attachUser, requireRole("Admin", "Issuer"), revokeDocument);
+
+// Public Routes (Verified Only)
+const { publicViewDocument, publicDownloadDocument } = require("../controllers/documentController");
+router.get("/public/:id/view", publicViewDocument);
+router.get("/public/:id/download", publicDownloadDocument);
 
 module.exports = router;
 

@@ -1,76 +1,56 @@
-const fs = require("fs/promises");
+const { Document } = require("../models/Document");
 const { generateSha256FromFile } = require("../services/hashService");
 const { getDocumentHashFromChain } = require("../services/blockchainService");
-const { compareHashesSecure, isSha256Hex, normalizeSha256 } = require("../services/verificationService");
-const { logAction } = require("./auditController");
+const { compareHashesSecure, normalizeSha256 } = require("../services/verificationService");
 
-async function verifyUploadedDocument(req, res, next) {
-  let uploadedPath = null;
+function computeStatus(doc, hashMatches) {
+  if (!doc) return "Not Found";
+  if (!hashMatches) return "Tampered";
+  if (doc.isRevoked || doc.status === "revoked") return "Tampered";
+  if (doc.expiryDate && new Date(doc.expiryDate).getTime() < Date.now()) return "Expired";
+  return "Valid";
+}
+
+async function verifyByDocumentId(req, res, next) {
   try {
-    const documentId = String(req.params?.documentId || "").trim();
-    if (!documentId) {
-      return res.status(400).json({ error: { message: "documentId is required" } });
-    }
+    const documentId = String(req.params.documentId || "").trim();
+    const doc = await Document.findById(documentId).lean();
+    if (!doc) return res.status(404).json({ status: "Not Found", isAuthentic: false });
 
-    if (!req.file?.path) {
-      return res.status(400).json({ error: { message: "Verification file is required" } });
-    }
-    uploadedPath = req.file.path;
-
-    const uploadedHash = await generateSha256FromFile(uploadedPath);
-    let onChain;
-    try {
-      onChain = await getDocumentHashFromChain({ documentId, fallbackSha256Hash: uploadedHash });
-    } catch (err) {
-      return res.status(200).json({
-        status: "unverifiable",
-        verdict: "Verification Unavailable",
-        isAuthentic: false,
-        documentId,
-        uploadedHash,
-        message: err?.message || "Document not found in blockchain ledger",
-      });
-    }
-    const originalHash = normalizeSha256(String(onChain.sha256HashHex).replace(/^0x/i, ""));
-
-    if (!isSha256Hex(originalHash)) {
-      return res.status(404).json({
-        status: "unverifiable",
-        documentId,
-        message: "Invalid document hash or document number",
-      });
-    }
-
-    const matches = compareHashesSecure(uploadedHash, originalHash);
-    const verdict = matches ? "Verification successful" : "Document Tampered";
-
-    await logAction({
-      userId: req.auth?.userId || null,
-      action: "Document Verification",
-      details: `Verification completed for document ID: ${documentId}. Result: ${verdict}`,
-      type: matches ? "success" : "warning",
-      metadata: { documentId, matches, uploadedHash },
-    });
-
-    return res.status(200).json({
-      status: "verified",
-      verdict,
-      isAuthentic: matches,
-      documentId,
-      uploadedHash,
-      blockchainHash: originalHash,
-      blockchainTimestamp: onChain.timestamp,
-    });
+    const onChain = await getDocumentHashFromChain({ documentId, fallbackSha256Hash: doc.sha256Hash });
+    const chainHash = normalizeSha256(onChain.sha256HashHex);
+    const hashMatches = compareHashesSecure(doc.sha256Hash, chainHash);
+    const status = computeStatus(doc, hashMatches);
+    return res.status(200).json({ status, isAuthentic: status === "Valid", documentId, hash: doc.sha256Hash });
   } catch (err) {
     return next(err);
-  } finally {
-    if (uploadedPath) {
-      await fs.unlink(uploadedPath).catch(() => {
-        // Ignore temp cleanup errors.
-      });
-    }
   }
 }
 
-module.exports = { verifyUploadedDocument };
+async function verifyByFile(req, res, next) {
+  try {
+    if (!req.file) return res.status(400).json({ error: { message: "Document file is required" } });
+    const uploadedHash = await generateSha256FromFile(req.file.path);
+    const doc = await Document.findOne({ sha256Hash: uploadedHash }).lean();
+    if (!doc) return res.status(404).json({ status: "Not Found", isAuthentic: false, hash: uploadedHash });
 
+    const onChain = await getDocumentHashFromChain({
+      documentId: String(doc._id),
+      fallbackSha256Hash: doc.sha256Hash,
+    });
+    const chainHash = normalizeSha256(onChain.sha256HashHex);
+    const hashMatches = compareHashesSecure(uploadedHash, chainHash);
+    const status = computeStatus(doc, hashMatches);
+    return res.status(200).json({
+      status,
+      isAuthentic: status === "Valid",
+      hash: uploadedHash,
+      documentId: String(doc._id),
+      title: doc.title,
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = { verifyByDocumentId, verifyByFile };

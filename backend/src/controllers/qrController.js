@@ -1,19 +1,13 @@
-const mongoose = require("mongoose");
 const { Document } = require("../models/Document");
 const { getDocumentHashFromChain } = require("../services/blockchainService");
 const { compareHashesSecure, normalizeSha256, isSha256Hex } = require("../services/verificationService");
 const { buildVerificationUrl, parseScanData, generateQrCodeDataUrl } = require("../services/qrService");
-const { logAction } = require("./auditController");
 
 async function getDocumentQr(req, res, next) {
   try {
     const documentId = String(req.params.documentId || "").trim();
     if (!documentId) {
       return res.status(400).json({ error: { message: "documentId is required" } });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(documentId)) {
-      return res.status(404).json({ error: { message: "Document not found (Invalid ID format)" } });
     }
 
     const doc = await Document.findById(documentId)
@@ -59,10 +53,6 @@ async function verifyFromQrScan(req, res, next) {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(documentId)) {
-      return res.status(404).json({ error: { message: "Document not found (Invalid ID format)" } });
-    }
-
     const doc = await Document.findById(documentId)
       .select("title ownerName issuingOrganization documentType uploadDate sha256Hash blockchain")
       .lean()
@@ -89,14 +79,6 @@ async function verifyFromQrScan(req, res, next) {
       : isAuthentic
         ? "Authentic Document"
         : "Document Tampered";
-
-    await logAction({
-      userId: req.auth?.userId || null,
-      action: "QR Verification",
-      details: `Document verified via QR scan. ID: ${documentId}. Result: ${verdict}`,
-      type: isAuthentic ? "success" : "warning",
-      metadata: { documentId, isAuthentic, chainError },
-    });
 
     return res.status(200).json({
       status: chainError ? "verified_with_warnings" : "verified",

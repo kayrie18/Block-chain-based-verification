@@ -1,11 +1,8 @@
 const express = require("express");
-const { storeHash, getHash, getBlockchainRecords } = require("../controllers/blockchainController");
+const { storeHash, getHash } = require("../controllers/blockchainController");
 const { requireAuth, requireRole } = require("../middleware/auth");
 
 const router = express.Router();
-
-// GET /api/blockchain/records
-router.get("/records", requireAuth, getBlockchainRecords);
 
 // POST /api/blockchain/store-hash
 // Body: { documentId: string, sha256HashHex: string, timestamp?: unixSeconds }

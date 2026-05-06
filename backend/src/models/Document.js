@@ -19,6 +19,10 @@ const documentSchema = new mongoose.Schema(
     storagePath: { type: String, required: true },
     ipfsCid: { type: String, default: null },
     sha256Hash: { type: String, required: true, index: true },
+    status: { type: String, required: true, enum: ["pending", "verified", "revoked", "rejected"], default: "pending" },
+    expiryDate: { type: Date, default: null },
+    rejectionReason: { type: String, default: null },
+    isRevoked: { type: Boolean, default: false },
     blockchain: {
       transactionId: { type: String, default: null },
       confirmed: { type: Boolean, default: false },

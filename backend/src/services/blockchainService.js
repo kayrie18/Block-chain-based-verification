@@ -1,20 +1,8 @@
 const { ethers } = require("ethers");
 const abi = require("../contracts/DocumentIntegrity.abi.json");
-const { Block } = require("../models/Block");
 
 function isConfigured() {
   return isWriteConfigured();
-}
-
-async function isRPCReachable() {
-  if (!process.env.ETH_RPC_URL) return false;
-  try {
-    const provider = new ethers.JsonRpcProvider(process.env.ETH_RPC_URL);
-    await provider.getNetwork();
-    return true;
-  } catch (err) {
-    return false;
-  }
 }
 
 function isReadConfigured() {
@@ -68,22 +56,18 @@ function normalizeHashInput(hash) {
 
 async function submitDocumentHashToBlockchain(payload) {
   const documentId = String(payload.documentId);
-  const sha256HashHex = normalizeHashInput(payload.sha256Hash);
+  const sha256HashHex = normalizeHashInput(payload.sha256HashHex || payload.sha256Hash);
 
-  if (!isWriteConfigured() || !(await isRPCReachable())) {
+  if (!isWriteConfigured()) {
     const simulatedTimestamp = Math.floor(Date.now() / 1000);
-    const newBlock = await Block.addBlock(
-      { documentId, sha256HashHex },
-      simulatedTimestamp
-    );
     return {
       accepted: true,
       provider: "simulation",
-      transactionId: newBlock.hash,
+      transactionId: `SIMULATED-${documentId}-${simulatedTimestamp}`,
       confirmed: true,
-      blockNumber: newBlock.index,
-      timestamp: newBlock.timestamp,
-      note: "Blockchain simulation used (Stored in local Block ledger).",
+      blockNumber: simulatedTimestamp,
+      timestamp: simulatedTimestamp,
+      note: "Blockchain simulation used because Ethereum settings are not configured.",
     };
   }
 
@@ -116,17 +100,13 @@ async function submitDocumentHashToBlockchain(payload) {
 }
 
 async function storeDocumentHashOnChain({ documentId, sha256HashHex, timestamp }) {
-  if (!isWriteConfigured() || !(await isRPCReachable())) {
+  if (!isWriteConfigured()) {
     const simulatedTimestamp = typeof timestamp === "number" ? timestamp : Math.floor(Date.now() / 1000);
-    const newBlock = await Block.addBlock(
-      { documentId: String(documentId), sha256HashHex: normalizeHashInput(sha256HashHex) },
-      simulatedTimestamp
-    );
     return {
-      transactionId: newBlock.hash,
+      transactionId: `SIMULATED-${String(documentId)}-${simulatedTimestamp}`,
       confirmed: true,
-      blockNumber: newBlock.index,
-      timestamp: newBlock.timestamp,
+      blockNumber: simulatedTimestamp,
+      timestamp: simulatedTimestamp,
     };
   }
 
@@ -162,25 +142,16 @@ async function storeDocumentHashOnChain({ documentId, sha256HashHex, timestamp }
 }
 
 async function getDocumentHashFromChain({ documentId, fallbackSha256Hash }) {
-  if (!isReadConfigured() || !(await isRPCReachable())) {
-    let block;
-    if (documentId) {
-      block = await Block.findOne({ "data.documentId": String(documentId) });
-    }
-    if (!block && fallbackSha256Hash) {
-      block = await Block.findOne({ "data.sha256HashHex": normalizeHashInput(fallbackSha256Hash) });
-    }
-    
-    if (!block) {
-      const err = new Error("Document not found in blockchain ledger");
-      err.statusCode = 404;
+  if (!isReadConfigured()) {
+    if (!fallbackSha256Hash) {
+      const err = new Error("Blockchain read is not configured and no fallback hash was provided");
+      err.statusCode = 500;
       throw err;
     }
-
     return {
-      documentId: block.data.documentId,
-      sha256HashHex: block.data.sha256HashHex,
-      timestamp: block.timestamp,
+      documentId: String(documentId),
+      sha256HashHex: normalizeHashInput(fallbackSha256Hash),
+      timestamp: Math.floor(Date.now() / 1000),
       simulated: true,
     };
   }
