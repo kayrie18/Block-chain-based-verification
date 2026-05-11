@@ -6,6 +6,7 @@ const { logAction } = require("./auditController");
 function computeVerificationStatus(doc) {
   if (!doc) return "Not Found";
   if (doc.isRevoked || doc.status === "revoked") return "Revoked";
+  if (doc.status === "rejected") return "Rejected";
   if (doc.expiryDate && new Date(doc.expiryDate).getTime() < Date.now()) return "Expired";
   if (doc?.blockchain?.confirmed) return "Valid";
   if (doc?.blockchain?.transactionId) return "Pending";
@@ -53,11 +54,15 @@ async function searchDocuments(req, res, next) {
     const filter = {};
 
     if (req.auth) {
-      if (req.auth.role === "Issuer" || req.auth.role === "User") {
-        // Issuers and normal Users only see documents they uploaded
+      if (req.auth.role === "User") {
         filter.uploadedBy = req.auth.userId;
+      } else if (req.auth.role === "Issuer") {
+        const userConditions = [{ uploadedBy: req.auth.userId }];
+        if (req.user?.organization) {
+          userConditions.push({ issuingOrganization: req.user.organization });
+        }
+        filter.$or = userConditions;
       } else if (req.auth.role === "Verifier") {
-        // Verifiers see all documents from their organization
         filter.issuingOrganization = req.user?.organization;
       }
     }
@@ -192,78 +197,50 @@ async function publicSearchDocuments(req, res, next) {
   try {
     const q = String(req.query?.q || "").trim();
     if (!q) {
-      return res.status(400).json({ error: { message: "Search query is required (Document ID or Hash)." } });
+      return res.status(400).json({ error: { message: "Search query is required." } });
     }
 
     const filter = { status: "verified" };
-    
-    // Allow either exact match by Object ID (if length 24) or by SHA256 hash
-    if (q.length === 24 && /^[0-9a-fA-F]{24}$/.test(q)) {
+    const exactId = q.length === 24 && /^[0-9a-fA-F]{24}$/.test(q);
+    const exactHash = /^[0-9a-fA-F]{64}$/.test(q);
+
+    if (exactId) {
       filter._id = q;
-    } else {
+    } else if (exactHash) {
       filter.sha256Hash = q.toLowerCase();
+    } else {
+      const escaped = escapeRegex(q);
+      filter.$or = [
+        { title: { $regex: escaped, $options: "i" } },
+        { ownerName: { $regex: escaped, $options: "i" } },
+        { issuingOrganization: { $regex: escaped, $options: "i" } },
+        { documentType: { $regex: escaped, $options: "i" } },
+      ];
     }
 
     const projection =
       "title ownerName issuingOrganization documentType uploadDate sha256Hash blockchain storageProvider ipfsCid status isRevoked expiryDate createdAt";
 
-    const doc = await Document.findOne(filter).select(projection).lean().exec();
+    const docs = await Document.find(filter).select(projection).limit(20).lean().exec();
 
-    if (!doc) {
+    if (!docs || !docs.length) {
       return res.status(404).json({ status: "Not Found", error: { message: "No verified document found matching this query." } });
     }
 
-    let onChain;
-    try {
-      onChain = await getDocumentHashFromChain({ documentId: doc._id.toString(), fallbackSha256Hash: doc.sha256Hash });
-    } catch (err) {
-      // Failed to retrieve from blockchain
-      const payload = {
-        document: {
-          id: String(doc._id),
-          title: doc.title,
-          ownerName: doc.ownerName,
-          issuingOrganization: doc.issuingOrganization,
-          documentType: doc.documentType,
-          uploadDate: doc.uploadDate,
-          sha256Hash: doc.sha256Hash,
-          status: doc.status,
-          isRevoked: doc.isRevoked,
-          expiryDate: doc.expiryDate,
-          blockchain: doc.blockchain || null,
-          storageProvider: doc.storageProvider,
-          ipfsCid: doc.ipfsCid,
-          verificationStatus: computeVerificationStatus(doc),
-          isAuthentic: false,
-          createdAt: doc.createdAt,
-        }
-      };
-      await logAction({
-        userId: null,
-        userName: "Public User",
-        action: "Document Verification Search",
-        details: `Public verification failed blockchain lookup for document ID: ${doc._id}`,
-        type: "warning",
-        metadata: { documentId: doc._id },
-      });
-      return res.status(200).json(payload);
-    }
+    const mapped = await Promise.all(docs.map(async (doc) => {
+      let verificationStatus = computeVerificationStatus(doc);
+      let isAuthentic = false;
 
-    const originalHash = normalizeSha256(onChain.sha256HashHex);
-    const uploadedHash = doc.sha256Hash;
-    const matches = compareHashesSecure(uploadedHash, originalHash);
+      try {
+        const onChain = await getDocumentHashFromChain({ documentId: doc._id.toString(), fallbackSha256Hash: doc.sha256Hash });
+        const originalHash = normalizeSha256(onChain.sha256HashHex);
+        isAuthentic = compareHashesSecure(doc.sha256Hash, originalHash);
+        verificationStatus = isAuthentic ? verificationStatus : "Tampered";
+      } catch (err) {
+        verificationStatus = computeVerificationStatus(doc);
+      }
 
-    const status = matches ? computeVerificationStatus(doc) : "Tampered";
-    await logAction({
-      userId: req.auth?.userId || null,
-      userName: req.user?.name || "Public User",
-      action: "Document Verification Search",
-      details: `Public verification triggered for document ID: ${doc._id}. Result: ${status}`,
-      type: matches ? "success" : "warning",
-      metadata: { documentId: doc._id, isAuthentic: matches },
-    });
-    return res.status(200).json({
-      document: {
+      return {
         id: String(doc._id),
         title: doc.title,
         ownerName: doc.ownerName,
@@ -277,11 +254,22 @@ async function publicSearchDocuments(req, res, next) {
         blockchain: doc.blockchain || null,
         storageProvider: doc.storageProvider,
         ipfsCid: doc.ipfsCid,
-        verificationStatus: status,
-        isAuthentic: matches,
+        verificationStatus,
+        isAuthentic,
         createdAt: doc.createdAt,
-      }
+      };
+    }));
+
+    await logAction({
+      userId: null,
+      userName: "Public User",
+      action: "Document Verification Search",
+      details: `Public verification search for query: ${q}. Found ${mapped.length} verified document(s).`,
+      type: "info",
+      metadata: { query: q, count: mapped.length },
     });
+
+    return res.status(200).json({ documents: mapped, total: mapped.length });
 
   } catch (err) {
     return next(err);

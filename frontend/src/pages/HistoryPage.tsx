@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { History, ShieldCheck, AlertCircle, Search, Filter, Download, ArrowUpRight } from 'lucide-react';
+import { History, ShieldCheck, AlertCircle, Search, Filter, Download, ArrowUpRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card, Button, Badge } from '../components/UI';
 import { api } from '../lib/api';
 import { formatDate } from '../utils/helpers';
@@ -15,12 +15,19 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ token }) => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalLogs, setTotalLogs] = useState(0);
+  const limit = 20;
 
-  const fetchLogs = async () => {
+  const fetchLogs = async (pageNum: number) => {
     setLoading(true);
     try {
-      const res = await api.get('/dashboard/audit', token);
+      const typeParam = filter !== 'all' ? `&type=${filter}` : '';
+      const res = await api.get(`/dashboard/audit?page=${pageNum}&limit=${limit}${typeParam}`, token);
       setLogs(res.logs || []);
+      setTotalPages(res.page?.totalPages || 1);
+      setTotalLogs(res.page?.total || 0);
     } catch (err) {
       console.error('Failed to fetch logs:', err);
     } finally {
@@ -29,15 +36,18 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ token }) => {
   };
 
   useEffect(() => {
-    fetchLogs();
-  }, []);
+    setPage(1);
+  }, [filter]);
+
+  useEffect(() => {
+    fetchLogs(page);
+  }, [page, filter]);
 
   const filtered = logs.filter(log => {
     const matchesSearch = log.action.toLowerCase().includes(search.toLowerCase()) || 
                           log.details.toLowerCase().includes(search.toLowerCase()) ||
                           log.userName?.toLowerCase().includes(search.toLowerCase());
-    const matchesFilter = filter === 'all' || log.type === filter;
-    return matchesSearch && matchesFilter;
+    return matchesSearch;
   });
 
   return (
@@ -122,6 +132,34 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ token }) => {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-100">
+            <div className="text-sm text-slate-500">
+              Page <span className="font-bold text-slate-900">{page}</span> of <span className="font-bold text-slate-900">{totalPages}</span> 
+              <span className="ml-4">({totalLogs} total entries)</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setPage(Math.max(1, page - 1))}
+                disabled={page === 1}
+                className="h-10 px-4 gap-2"
+              >
+                <ChevronLeft size={16} /> Previous
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setPage(Math.min(totalPages, page + 1))}
+                disabled={page === totalPages}
+                className="h-10 px-4 gap-2"
+              >
+                Next <ChevronRight size={16} />
+              </Button>
+            </div>
           </div>
         )}
       </Card>

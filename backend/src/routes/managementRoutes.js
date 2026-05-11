@@ -1,30 +1,33 @@
 const express = require("express");
 const { listPendingDocuments, approvePendingDocument, rejectPendingDocument } = require("../controllers/managementController");
-const { requireAuth, requireRole, attachUser } = require("../middleware/auth");
+const { requireAuth, requireRole, attachUser, requireApprovedVerifier } = require("../middleware/auth");
 
 const router = express.Router();
 
 router.get(
   "/pending",
   requireAuth,
-  requireRole("Admin", "Verifier"),
   attachUser,
+  requireRole("Admin", "Verifier"),
+  requireApprovedVerifier,
   listPendingDocuments
 );
 
 router.post(
   "/approve/:id",
   requireAuth,
-  requireRole("Admin", "Verifier"),
   attachUser,
+  requireRole("Admin", "Verifier"),
+  requireApprovedVerifier,
   approvePendingDocument
 );
 
 router.post(
   "/reject/:id",
   requireAuth,
-  requireRole("Admin", "Verifier"),
   attachUser,
+  requireRole("Admin", "Verifier"),
+  requireApprovedVerifier,
   rejectPendingDocument
 );
 

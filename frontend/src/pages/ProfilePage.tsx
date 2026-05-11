@@ -1,9 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { User as UserIcon, Mail, Building, Shield, FileUp, Save, Eye, EyeOff, Lock, Camera } from 'lucide-react';
-import { Card, Button } from '../components/UI';
+import { User as UserIcon, Mail, Building, Shield, Save, Eye, EyeOff, Lock } from 'lucide-react';
+import { Card, Button, Badge } from '../components/UI';
 import { Avatar } from '../components/Avatar';
-import { getBaseUrl } from '../lib/api';
 import { User } from '../types';
 
 interface ProfilePageProps {
@@ -20,19 +19,17 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ user, onUpdate, loadin
     password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const handleUpdate = (e: React.FormEvent) => {
     e.preventDefault();
+    // Password changes should go to a separate endpoint, not the profile update
     onUpdate({
       name: formData.name,
       email: formData.email,
       organization: formData.organization,
-      ...(formData.password && { password: formData.password }),
     });
+    // Password field is intentionally not included for security
   };
-
-  const API_SERVER = getBaseUrl();
 
   return (
     <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="max-w-4xl mx-auto pb-12">
@@ -155,21 +152,5 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ user, onUpdate, loadin
         </div>
       </div>
     </motion.div>
-  );
-};
-
-// Simple Badge Redefinition for reuse in Case UI.tsx isn't perfect
-const Badge = ({ children, variant, className }: any) => {
-  const styles: any = {
-    success: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    error: 'bg-rose-100 text-rose-700 border-rose-200',
-    info: 'bg-blue-100 text-blue-700 border-blue-200',
-    warning: 'bg-amber-100 text-amber-700 border-amber-200',
-    brand: 'bg-brand-100 text-brand-700 border-brand-200',
-  };
-  return (
-    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${styles[variant]} ${className}`}>
-      {children}
-    </span>
   );
 };

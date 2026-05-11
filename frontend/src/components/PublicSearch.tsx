@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { Search, FileText, CheckCircle2, X } from 'lucide-react';
-import { Button, Badge } from './UI';
-import { getBaseUrl } from '../lib/api';
+import { Button } from './UI';
+import { api, getBaseUrl } from '../lib/api';
 import { AnimatePresence, motion } from 'motion/react';
 
 export const PublicSearch: React.FC = () => {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [results, setResults] = useState<any[]>([]);
   const [error, setError] = useState('');
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -16,18 +16,31 @@ export const PublicSearch: React.FC = () => {
     
     setLoading(true);
     setError('');
-    setResult(null);
+    setResults([]);
     
     try {
-      const response = await fetch(`${getBaseUrl()}/api/search/public?q=${encodeURIComponent(query)}`);
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData?.error?.message || 'Verification search failed');
+      const data = await api.get(`/search/public?q=${encodeURIComponent(query)}`);
+      
+      // Normalize response: handle both array and single document formats
+      let resultArray: any[] = [];
+      if (Array.isArray(data.items)) {
+        resultArray = data.items;
+      } else if (Array.isArray(data.documents)) {
+        resultArray = data.documents;
+      } else if (data.document) {
+        resultArray = [data.document];
+      } else if (data.id) {
+        // Single document object
+        resultArray = [data];
       }
-      const data = await response.json();
-      setResult(data.document);
+      
+      if (resultArray.length === 0) {
+        setError('No verified documents found matching your query.');
+      } else {
+        setResults(resultArray);
+      }
     } catch (err: any) {
-      setError(err.message);
+      setError(err?.message || 'Verification search failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -63,7 +76,7 @@ export const PublicSearch: React.FC = () => {
       )}
 
       <AnimatePresence>
-        {result && (
+        {results.length > 0 && (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -77,51 +90,77 @@ export const PublicSearch: React.FC = () => {
                   <CheckCircle2 size={24} />
                 </div>
                 <div>
-                  <h3 className="font-black text-slate-900 text-xl tracking-tight">Authentic Document</h3>
-                  <div className="text-xs font-bold text-emerald-600 uppercase tracking-widest mt-0.5">Blockchain Verified</div>
+                  <h3 className="font-black text-slate-900 text-xl tracking-tight">Verified Document{results.length > 1 ? 's' : ''}</h3>
+                  <div className="text-xs font-bold text-emerald-600 uppercase tracking-widest mt-0.5">
+                    {results.length} result{results.length > 1 ? 's' : ''}
+                  </div>
                 </div>
               </div>
               <button 
-                onClick={() => setResult(null)}
+                onClick={() => setResults([])}
                 className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
               >
                 <X size={16} />
               </button>
             </div>
-            
-            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 mb-6 font-mono text-[10px] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 font-bold uppercase tracking-widest">Document Title</span>
-                <span className="text-slate-700 font-bold ml-4 truncate text-right">{result.title}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 font-bold uppercase tracking-widest">Issuer</span>
-                <span className="text-slate-700 font-bold ml-4 truncate text-right">{result.issuingOrganization}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 font-bold uppercase tracking-widest">Blockchain Hash</span>
-                <span className="text-brand-600 font-black ml-4 truncate text-right" title={result.sha256Hash}>
-                  ...{result.sha256Hash?.slice(-16)}
-                </span>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <a 
-                href={`${API_SERVER}/api/documents/public/${result.id}/view`} 
-                target="_blank" 
-                rel="noreferrer"
-                className="flex items-center justify-center gap-2 bg-white border-2 border-brand-100 hover:border-brand-500 text-brand-600 font-bold uppercase tracking-widest text-xs py-4 rounded-xl transition-all"
-              >
-                <FileText size={16} /> Read
-              </a>
-              <a 
-                href={`${API_SERVER}/api/documents/public/${result.id}/download`}
-                download
-                className="flex items-center justify-center gap-2 bg-brand-50 hover:bg-brand-100 text-brand-600 font-bold uppercase tracking-widest text-xs py-4 rounded-xl transition-all"
-              >
-                Download
-              </a>
+            <div className="space-y-4">
+              {results.map((resultItem) => (
+                <div key={resultItem.id} className="rounded-3xl border border-slate-100 bg-slate-50 p-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold">Document Title</div>
+                      <div className="text-slate-900 font-semibold mt-2">{resultItem.title}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold">Document Type</div>
+                      <div className="text-slate-900 font-semibold mt-2">{resultItem.documentType || 'Not specified'}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold">Issuer Organization</div>
+                      <div className="text-slate-900 font-semibold mt-2">{resultItem.issuingOrganization}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold">Uploaded By</div>
+                      <div className="text-slate-900 font-semibold mt-2">{resultItem.ownerName}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold">Upload Date</div>
+                      <div className="text-slate-900 font-semibold mt-2">{resultItem.uploadDate ? new Date(resultItem.uploadDate).toLocaleDateString() : 'N/A'}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold">Verification Status</div>
+                      <div className={`mt-2 font-semibold ${resultItem.isAuthentic ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {resultItem.isAuthentic ? '✓ Authentic' : '✗ Tampered'}
+                      </div>
+                    </div>
+                    <div className="md:col-span-2">
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold mb-2">SHA-256 Hash</div>
+                      <div className="text-brand-600 font-mono text-xs break-all bg-slate-100 p-2 rounded border border-slate-200">
+                        {resultItem.sha256Hash}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <a
+                      href={`${API_SERVER}/api/documents/public/${resultItem.id}/view`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-100 bg-white px-4 py-3 text-xs font-bold uppercase tracking-widest text-brand-600 transition hover:border-brand-500"
+                    >
+                      <FileText size={16} /> Read
+                    </a>
+                    <a
+                      href={`${API_SERVER}/api/documents/public/${resultItem.id}/download`}
+                      download
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-50 px-4 py-3 text-xs font-bold uppercase tracking-widest text-brand-600 transition hover:bg-brand-100"
+                    >
+                      Download
+                    </a>
+                  </div>
+                </div>
+              ))}
             </div>
           </motion.div>
         )}

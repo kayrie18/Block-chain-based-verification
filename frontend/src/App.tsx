@@ -28,6 +28,7 @@ import { api } from './lib/api';
 import { cn } from './lib/utils';
 import { User, UserRole, DocumentRecord, ActivityLog, SystemStats } from './types';
 import { PublicSearch } from './components/PublicSearch';
+import { PublicVerifyPage } from './pages/PublicVerifyPage';
 import { generateSHA256, formatDate } from './utils/helpers';
 import { QRCodeSVG } from 'qrcode.react';
 import { 
@@ -97,7 +98,7 @@ const Button = ({ children, variant = 'primary', className, disabled, ...props }
 // --- Main App ---
 
 export default function App() {
-  const [view, setView] = useState<'landing' | 'login' | 'register' | 'dashboard'>('landing');
+  const [view, setView] = useState<'landing' | 'login' | 'register' | 'dashboard' | 'publicVerify'>('landing');
   const [activeTab, setActiveTab] = useState<'overview' | 'upload' | 'verify' | 'search' | 'history' | 'admin' | 'profile'>('overview');
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -251,6 +252,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-4">
             <Button variant="ghost" onClick={() => setView('login')}>Log in</Button>
+            <Button variant="outline" onClick={() => setView('publicVerify')}>Public Verify</Button>
             <Button onClick={() => setView('register')}>Get Started</Button>
           </div>
         </nav>
@@ -272,10 +274,7 @@ export default function App() {
               </p>
               <div className="mt-10 flex items-center gap-4">
                 <Button className="h-14 px-8 text-lg" onClick={() => setView('register')}>Start Verifying Now</Button>
-                <Button variant="outline" className="h-14 px-8 text-lg" onClick={() => {
-                  const el = document.getElementById('public-access');
-                  el?.scrollIntoView({ behavior: 'smooth' });
-                }}>Public Access</Button>
+                <Button variant="outline" className="h-14 px-8 text-lg" onClick={() => setView('publicVerify')}>Public Access</Button>
               </div>
             </motion.div>
             
@@ -318,6 +317,10 @@ export default function App() {
         </section>
       </div>
     );
+  }
+
+  if (view === 'publicVerify') {
+    return <PublicVerifyPage onBack={() => setView('landing')} />;
   }
 
   if (view === 'login' || view === 'register') {

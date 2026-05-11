@@ -17,6 +17,7 @@ import {
   Clock
 } from 'lucide-react';
 import { Card, Button, Badge } from '../components/UI';
+import { VerificationDetailsModal } from '../components/VerificationDetailsModal';
 import { api, getBaseUrl } from '../lib/api';
 import { formatDate } from '../utils/helpers';
 import { cn } from '../lib/utils';
@@ -32,10 +33,13 @@ export const SearchPage: React.FC<SearchPageProps> = ({ token }) => {
   const [loading, setLoading] = useState(false);
   const [resultsTitle, setResultsTitle] = useState('Recently Registered');
   const [verificationStatuses, setVerificationStatuses] = useState<Record<string, any>>({});
+  const [verifyingIds, setVerifyingIds] = useState<Set<string>>(new Set());
+  const [selectedVerificationId, setSelectedVerificationId] = useState<string | null>(null);
 
   const handleSearch = async (q?: string) => {
     const searchTerm = q !== undefined ? q : query;
     setLoading(true);
+    setVerificationStatuses({}); // Reset verification statuses on new search
     try {
       const endpoint = searchTerm.trim() 
         ? `/search/documents?q=${encodeURIComponent(searchTerm)}&limit=20`
@@ -45,13 +49,6 @@ export const SearchPage: React.FC<SearchPageProps> = ({ token }) => {
       const docs = res.items || [];
       setDocuments(docs);
       setResultsTitle(searchTerm.trim() ? `Search Results for "${searchTerm}"` : 'Recently Registered');
-      
-      // Automatic Verification for all found documents
-      docs.forEach((doc: any) => {
-        if (doc.status === 'verified') {
-          performAutoVerification(doc.id);
-        }
-      });
     } catch (err) {
       console.error('Search failed:', err);
     } finally {
@@ -59,17 +56,26 @@ export const SearchPage: React.FC<SearchPageProps> = ({ token }) => {
     }
   };
 
-  const performAutoVerification = async (docId: string) => {
+  const performManualVerification = async (docId: string) => {
+    if (verifyingIds.has(docId)) return; // Prevent duplicate requests
+    
+    const newVerifyingIds = new Set(verifyingIds);
+    newVerifyingIds.add(docId);
+    setVerifyingIds(newVerifyingIds);
+    
     try {
       const res = await api.get(`/verification/hash/${docId}`, token);
       setVerificationStatuses(prev => ({ ...prev, [docId]: res }));
+      // Auto-open modal on successful verification
+      setSelectedVerificationId(docId);
     } catch (err: any) {
-      console.error(`Auto-verify failed for ${docId}:`, err);
+      console.error(`Verification failed for ${docId}:`, err);
+      setVerificationStatuses(prev => ({ ...prev, [docId]: { error: err.message } }));
+    } finally {
+      const newIds = new Set(verifyingIds);
+      newIds.delete(docId);
+      setVerifyingIds(newIds);
     }
-  };
-
-  const verifyByHash = async (documentId: string) => {
-    await performAutoVerification(documentId);
   };
 
   const handleShare = (docId: string) => {
@@ -89,11 +95,11 @@ export const SearchPage: React.FC<SearchPageProps> = ({ token }) => {
   useEffect(() => {
     handleSearch();
     
-    // Deep Link: Auto-verify if ID is in URL
+    // Deep Link: Verify if ID is in URL (manual verification only)
     const params = new URLSearchParams(window.location.search);
     const idParam = params.get('id');
     if (idParam) {
-      verifyByHash(idParam);
+      performManualVerification(idParam);
     }
   }, []);
 
@@ -156,13 +162,13 @@ export const SearchPage: React.FC<SearchPageProps> = ({ token }) => {
                       <div className="flex flex-wrap items-center gap-3 mb-2">
                         <h4 className="font-black text-slate-900 text-lg truncate">{doc.title}</h4>
                         {getStatusBadge(doc.status || 'pending')}
-                        {verificationStatuses[doc.id] && (
+                        {verificationStatuses[doc.id] && !verificationStatuses[doc.id].error && (
                           <div className={cn(
                             "flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest",
                             verificationStatuses[doc.id].isAuthentic ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
                           )}>
                              {verificationStatuses[doc.id].isAuthentic ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
-                             {verificationStatuses[doc.id].isAuthentic ? "Blockchain Valid" : "Hash Mismatch / Warning"}
+                             {verificationStatuses[doc.id].isAuthentic ? "Verified Authentic" : "Verification Failed"}
                           </div>
                         )}
                       </div>
@@ -179,8 +185,18 @@ export const SearchPage: React.FC<SearchPageProps> = ({ token }) => {
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-3 shrink-0 self-end lg:self-center">
-                    {doc.status === "verified" && (
+                  <div className="flex items-center gap-3 shrink-0 self-end lg:self-center flex-wrap">
+                    {doc.status === "verified" && !verificationStatuses[doc.id] && (
+                      <Button 
+                        onClick={() => performManualVerification(doc.id)}
+                        disabled={verifyingIds.has(doc.id)}
+                        variant="brand" 
+                        className="h-12 px-6 text-xs gap-2 shadow-lg shadow-brand-500/20"
+                      >
+                        <ShieldCheck size={16} /> {verifyingIds.has(doc.id) ? 'Verifying...' : 'Verify'}
+                      </Button>
+                    )}
+                    {verificationStatuses[doc.id] && !verificationStatuses[doc.id].error && (
                       <>
                         <Button 
                           onClick={() => handleRead(doc.id)} 
@@ -192,22 +208,24 @@ export const SearchPage: React.FC<SearchPageProps> = ({ token }) => {
                         <Button 
                           onClick={() => handleDownload(doc.id)} 
                           variant="brand" 
-                          className="h-12 px-6 text-xs gap-2 shadow-lg shadow-brand-500/20 bg-emerald-600 hover:bg-emerald-700 hover:shadow-emerald-500/20"
+                          className="h-12 px-6 text-xs gap-2 shadow-lg shadow-emerald-500/20 bg-emerald-600 hover:bg-emerald-700"
                         >
                           <Download size={16} /> Download
                         </Button>
-                        <Button onClick={() => handleShare(doc.id)} variant="outline" className="h-12 w-12 p-0 hover:bg-slate-50">
-                          <Share2 size={18} />
-                        </Button>
                       </>
                     )}
-                    <Button 
-                      variant="ghost" 
-                      onClick={() => alert(`Blockchain Details for [${doc.title}]:\n\nHash:\n${doc.sha256Hash}\n\nTransaction ID:\n${doc.blockchain?.transactionId || 'Simulated or Pending'}\n\nStatus: ${doc.status.toUpperCase()}`)}
-                      className="h-12 px-6 text-xs font-black uppercase tracking-widest text-slate-500 hover:text-brand-600 gap-2"
-                    >
-                      Details <ExternalLink size={16} />
+                    <Button onClick={() => handleShare(doc.id)} variant="outline" className="h-12 w-12 p-0 hover:bg-slate-50">
+                      <Share2 size={18} />
                     </Button>
+                    {verificationStatuses[doc.id] && !verificationStatuses[doc.id].error && (
+                      <Button 
+                        onClick={() => setSelectedVerificationId(doc.id)}
+                        variant="ghost" 
+                        className="h-12 px-6 text-xs font-black uppercase tracking-widest text-brand-600 hover:text-brand-700 gap-2"
+                      >
+                        Details <ExternalLink size={16} />
+                      </Button>
+                    )}
                   </div>
                 </div>
               </Card>
@@ -215,6 +233,22 @@ export const SearchPage: React.FC<SearchPageProps> = ({ token }) => {
           </div>
         )}
       </div>
+
+      <VerificationDetailsModal
+        isOpen={selectedVerificationId !== null}
+        onClose={() => setSelectedVerificationId(null)}
+        verification={selectedVerificationId ? verificationStatuses[selectedVerificationId] : null}
+        onDownload={() => {
+          if (selectedVerificationId) {
+            handleDownload(selectedVerificationId);
+          }
+        }}
+        onRead={() => {
+          if (selectedVerificationId) {
+            handleRead(selectedVerificationId);
+          }
+        }}
+      />
     </motion.div>
   );
 };

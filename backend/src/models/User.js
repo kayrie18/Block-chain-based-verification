@@ -71,7 +71,6 @@ userSchema.methods.toSafeJSON = function toSafeJSON() {
     role: this.role,
     organization: this.organization || null,
     isVerifierApproved: this.isVerifierApproved || false,
-    profilePictureUrl: this.profilePictureUrl || null,
     createdAt: this.createdAt,
     updatedAt: this.updatedAt,
   };

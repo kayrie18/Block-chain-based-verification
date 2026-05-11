@@ -2,10 +2,20 @@ const path = require("path");
 const fs = require("fs/promises");
 const { Document } = require("../models/Document");
 const { generateSha256FromFile } = require("../services/hashService");
-const { persistUploadedFile } = require("../services/storageService");
+const { persistUploadedFile, getLocalUploadDir } = require("../services/storageService");
 const { submitDocumentHashToBlockchain } = require("../services/blockchainService");
 const { signHash } = require("../services/signingService");
 const { logAction } = require("./auditController");
+
+function ensureSafeStoragePath(filePath) {
+  const uploadRoot = path.resolve(getLocalUploadDir());
+  const absolutePath = path.resolve(filePath);
+  const relativePath = path.relative(uploadRoot, absolutePath);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error("Invalid storage path detected");
+  }
+  return absolutePath;
+}
 
 /**
  * Upload and Sign Document
@@ -146,9 +156,13 @@ async function downloadDocument(req, res, next) {
       return res.status(403).json({ error: { message: "Access denied. Private document require ownership or admin rights." } });
     }
 
-    const absolutePath = path.resolve(doc.storagePath);
-    
-    // Check if file actually exists on disk
+    let absolutePath;
+    try {
+      absolutePath = ensureSafeStoragePath(doc.storagePath);
+    } catch {
+      return res.status(500).json({ error: { message: "Document storage path is invalid." } });
+    }
+
     try {
       await fs.access(absolutePath);
     } catch {
@@ -220,7 +234,13 @@ async function viewDocument(req, res, next) {
       return res.status(403).json({ error: { message: "Access denied." } });
     }
 
-    const absolutePath = path.resolve(doc.storagePath);
+    let absolutePath;
+    try {
+      absolutePath = ensureSafeStoragePath(doc.storagePath);
+    } catch {
+      return res.status(500).json({ error: { message: "Document storage path is invalid." } });
+    }
+
     res.setHeader("Content-Type", doc.mimeType || "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${doc.originalFileName}"`);
     return res.sendFile(absolutePath);
@@ -239,7 +259,13 @@ async function publicDownloadDocument(req, res, next) {
     if (!doc || doc.status !== "verified") {
       return res.status(404).json({ error: { message: "Document not found or not verified." } });
     }
-    const absolutePath = path.resolve(doc.storagePath);
+    let absolutePath;
+    try {
+      absolutePath = ensureSafeStoragePath(doc.storagePath);
+    } catch {
+      return res.status(500).json({ error: { message: "Document storage path is invalid." } });
+    }
+
     try {
       await fs.access(absolutePath);
     } catch {
@@ -270,7 +296,13 @@ async function publicViewDocument(req, res, next) {
     if (!doc || doc.status !== "verified") {
       return res.status(404).json({ error: { message: "Document not found or not verified." } });
     }
-    const absolutePath = path.resolve(doc.storagePath);
+    let absolutePath;
+    try {
+      absolutePath = ensureSafeStoragePath(doc.storagePath);
+    } catch {
+      return res.status(500).json({ error: { message: "Document storage path is invalid." } });
+    }
+
     res.setHeader("Content-Type", doc.mimeType || "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${doc.originalFileName}"`);
 

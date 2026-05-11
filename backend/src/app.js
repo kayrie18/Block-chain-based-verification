@@ -31,6 +31,10 @@ function createApp() {
     res.status(200).json({ ok: true });
   });
 
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
   app.use("/api/auth", authRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/documents", documentRoutes);

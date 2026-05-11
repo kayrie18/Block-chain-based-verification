@@ -1,11 +1,11 @@
 const express = require("express");
 const { searchDocuments, publicSearchDocuments } = require("../controllers/searchController");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, attachUser } = require("../middleware/auth");
 
 const router = express.Router();
 
 // GET /api/search/documents?...filters...
-router.get("/documents", requireAuth, searchDocuments);
+router.get("/documents", requireAuth, attachUser, searchDocuments);
 
 // GET /api/search/public?q=...
 router.get("/public", publicSearchDocuments);

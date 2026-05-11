@@ -61,25 +61,49 @@ async function getMetrics(req, res, next) {
   }
 }
 
+const { AuditLog } = require("../models/AuditLog");
+
 async function getAuditLog(req, res, next) {
   try {
-    const documents = await Document.find()
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .populate("uploadedBy", "name email")
-      .lean();
+    const parsedLimit = Number(req.query?.limit);
+    const parsedPage = Number(req.query?.page);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 50) : 20;
+    const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+    const skip = (page - 1) * limit;
 
-    const logs = documents.map((doc) => ({
-      id: doc._id.toString(),
-      userId: doc.uploadedBy?._id?.toString() || null,
-      userName: doc.uploadedBy?.name || "Unknown",
-      action: "Document Uploaded",
-      details: `${doc.title} uploaded for ${doc.ownerName} by ${doc.issuingOrganization}`,
-      timestamp: doc.createdAt,
-      type: doc.blockchain?.confirmed ? "success" : "warning",
-    }));
+    const filter = {};
+    if (req.auth.role !== "Admin") {
+      filter.userId = req.auth.userId;
+    }
 
-    return res.status(200).json({ logs });
+    const [logs, total] = await Promise.all([
+      AuditLog.find(filter)
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      AuditLog.countDocuments(filter).exec(),
+    ]);
+
+    return res.status(200).json({
+      logs: logs.map((entry) => ({
+        id: String(entry._id),
+        userId: entry.userId ? String(entry.userId) : null,
+        userName: entry.userName,
+        action: entry.action,
+        details: entry.details,
+        type: entry.type,
+        metadata: entry.metadata || {},
+        timestamp: entry.timestamp,
+      })),
+      page: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 0,
+      },
+    });
   } catch (err) {
     return next(err);
   }
