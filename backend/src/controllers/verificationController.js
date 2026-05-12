@@ -25,9 +25,10 @@ async function verifyByDocumentId(req, res, next) {
           action: "Verification Failed",
           details: `Verification failed: Document ID ${documentId} not found.`,
           type: "warning",
+          actionType: "official",
         });
       }
-      return res.status(404).json({ status: "Not Found", isAuthentic: false });
+      return res.status(200).json({ status: "Not Found", isAuthentic: false });
     }
 
     const onChain = await getDocumentHashFromChain({ documentId, fallbackSha256Hash: doc.sha256Hash });
@@ -42,21 +43,39 @@ async function verifyByDocumentId(req, res, next) {
         action: "Document Verified",
         details: `Verification of document "${doc.title}": ${status}`,
         type: "info",
+        actionType: "official",
         metadata: { documentId, status, isAuthentic: status === "Valid" },
       });
     }
     
-    return res.status(200).json({ 
-      status, 
-      isAuthentic: status === "Valid", 
-      documentId, 
+    const verificationTimestamp = doc?.blockchain?.timestamp || (onChain?.timestamp ?? undefined);
+
+    const tamperDetectionResult = {
+      hashMatches,
+      details: hashMatches
+        ? "Uploaded SHA-256 matches on-chain stored hash."
+        : "Uploaded SHA-256 does not match on-chain stored hash.",
+    };
+
+    return res.status(200).json({
+      status,
+      isAuthentic: status === "Valid",
+      verificationTimestamp,
+
+      // Fields expected by PublicVerifyFlow
       hash: doc.sha256Hash,
+      blockchainHash: chainHash,
+      tamperDetectionResult,
+
+      documentId,
       title: doc.title,
       ownerName: doc.ownerName,
+      issuer: doc.issuingOrganization,
       issuingOrganization: doc.issuingOrganization,
       uploadDate: doc.uploadDate,
       blockchain: doc.blockchain || null,
       documentType: doc.documentType,
+      originalFileName: doc.originalFileName,
     });
   } catch (err) {
     return next(err);
@@ -76,9 +95,10 @@ async function verifyByFile(req, res, next) {
           action: "Verification Failed",
           details: `File verification failed: Hash ${uploadedHash} not found in database.`,
           type: "warning",
+          actionType: "official",
         });
       }
-      return res.status(404).json({ status: "Not Found", isAuthentic: false, hash: uploadedHash });
+      return res.status(200).json({ status: "Not Found", isAuthentic: false, hash: uploadedHash });
     }
 
     const onChain = await getDocumentHashFromChain({
@@ -96,21 +116,38 @@ async function verifyByFile(req, res, next) {
         action: "Document Verified by File",
         details: `File verification for document "${doc.title}": ${status}`,
         type: "info",
+        actionType: "official",
         metadata: { documentId: String(doc._id), status, isAuthentic: status === "Valid" },
       });
     }
     
+    const verificationTimestamp = doc?.blockchain?.timestamp || (onChain?.timestamp ?? undefined);
+
+    const tamperDetectionResult = {
+      hashMatches,
+      details: hashMatches
+        ? "Uploaded SHA-256 matches on-chain stored hash."
+        : "Uploaded SHA-256 does not match on-chain stored hash.",
+    };
+
     return res.status(200).json({
       status,
       isAuthentic: status === "Valid",
+      verificationTimestamp,
+
       hash: uploadedHash,
+      blockchainHash: chainHash,
+      tamperDetectionResult,
+
       documentId: String(doc._id),
       title: doc.title,
       ownerName: doc.ownerName,
+      issuer: doc.issuingOrganization,
       issuingOrganization: doc.issuingOrganization,
       documentType: doc.documentType,
       uploadDate: doc.uploadDate,
       blockchain: doc.blockchain || null,
+      originalFileName: doc.originalFileName,
     });
   } catch (err) {
     return next(err);

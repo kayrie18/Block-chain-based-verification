@@ -6,28 +6,29 @@ import {
   Search, 
   History, 
   Users, 
-  Bell, 
   LogOut, 
   Menu, 
   X,
-  ChevronRight,
   FileText,
   CheckCircle2,
   AlertCircle,
-  BarChart3,
-  QrCode,
-  Save,
   Eye,
   EyeOff,
   User as UserIcon,
-  Settings
+  Copy,
+  Download,
+  Mail,
+  Send,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 // Removed broken imports - inline views
 import { api } from './lib/api';
 import { cn } from './lib/utils';
 import { User, UserRole, DocumentRecord, ActivityLog, SystemStats } from './types';
-import { PublicSearch } from './components/PublicSearch';
+
+import { Avatar } from './components/Avatar';
+
 import { PublicVerifyPage } from './pages/PublicVerifyPage';
 import { generateSHA256, formatDate } from './utils/helpers';
 import { QRCodeSVG } from 'qrcode.react';
@@ -100,6 +101,7 @@ const Button = ({ children, variant = 'primary', className, disabled, ...props }
 export default function App() {
   const [view, setView] = useState<'landing' | 'login' | 'register' | 'dashboard' | 'publicVerify'>('landing');
   const [activeTab, setActiveTab] = useState<'overview' | 'upload' | 'verify' | 'search' | 'history' | 'admin' | 'profile'>('overview');
+
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -252,7 +254,6 @@ export default function App() {
           </div>
           <div className="flex items-center gap-4">
             <Button variant="ghost" onClick={() => setView('login')}>Log in</Button>
-            <Button variant="outline" onClick={() => setView('publicVerify')}>Public Verify</Button>
             <Button onClick={() => setView('register')}>Get Started</Button>
           </div>
         </nav>
@@ -274,7 +275,13 @@ export default function App() {
               </p>
               <div className="mt-10 flex items-center gap-4">
                 <Button className="h-14 px-8 text-lg" onClick={() => setView('register')}>Start Verifying Now</Button>
-                <Button variant="outline" className="h-14 px-8 text-lg" onClick={() => setView('publicVerify')}>Public Access</Button>
+              </div>
+
+              <div className="mt-6">
+                <Button variant="outline" className="h-14 px-8 text-lg" onClick={() => setView('publicVerify')}>
+                  PUBLIC VERIFY
+                </Button>
+                <p className="mt-2 text-xs text-slate-500">Search and verify authenticity without signing in.</p>
               </div>
             </motion.div>
             
@@ -307,13 +314,6 @@ export default function App() {
               </Card>
             </motion.div>
           </div>
-        </section>
-        <section id="public-access" className="max-w-7xl mx-auto px-8 pb-24">
-          <Card title="Public Access Verification" subtitle="Search authenticity, verify documents, and download verified files without logging in.">
-            <div className="flex justify-center">
-              <PublicSearch />
-            </div>
-          </Card>
         </section>
       </div>
     );
@@ -510,7 +510,7 @@ export default function App() {
                 <div className="text-sm font-bold text-slate-900">{user.name}</div>
                 <div className="text-xs text-slate-500">{user.role}</div>
               </div>
-              <img src={user.profilePictureUrl ? `${API_BASE.replace('/api', '')}${user.profilePictureUrl}?t=${new Date().getTime()}` : `https://picsum.photos/seed/${user.email}/100/100`} className="w-10 h-10 rounded-xl border border-slate-200 object-cover" alt="Avatar" referrerPolicy="no-referrer" />
+              <Avatar user={user} size="md" className="border border-slate-200" />
             </div>
           </div>
         </header>
@@ -596,32 +596,12 @@ export default function App() {
             )}
 
             {activeTab === 'history' && (
-              <motion.div key="history" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-                <Card title="System Audit Log" subtitle="Complete history of all activities">
-                  <div className="mt-6 space-y-4">
-                    {auditLogs.length === 0 ? (
-                      <div className="text-center py-8 text-slate-500">No audit log entries</div>
-                    ) : (
-                      auditLogs.map((log) => (
-                        <div key={log.id} className="p-4 rounded-2xl border border-slate-100 flex items-center justify-between hover:bg-slate-50">
-                          <div className="flex items-center gap-4">
-                            <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", log.type === 'success' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600')}>
-                              {log.type === 'success' ? <ShieldCheck size={20} /> : <AlertCircle size={20} />}
-                            </div>
-                            <div>
-                              <div className="text-sm font-bold text-slate-900">{log.action}</div>
-                              <div className="text-xs text-slate-500 mt-0.5">{log.details} • By {log.userName}</div>
-                            </div>
-                          </div>
-                          <div className="text-sm font-bold text-slate-500">{formatDate(log.timestamp).split(',')[0]}</div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </Card>
-              </motion.div>
+              <AuditLogView token={token!} userRole={user.role} />
             )}
 
+            {activeTab === 'profile' && !profileData && (
+              <div className="text-center py-12 text-slate-500">Loading profile...</div>
+            )}
             {activeTab === 'profile' && profileData && (
               <ProfileView user={profileData} token={token!} onUpdate={handleProfileUpdate} loading={loading} />
             )}
@@ -649,6 +629,7 @@ export default function App() {
 function UploadView({ token, onSuccess }: { token: string; onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [uploadedDoc, setUploadedDoc] = useState<any>(null);
   const [formData, setFormData] = useState({
     title: '',
     ownerName: '',
@@ -682,7 +663,8 @@ function UploadView({ token, onSuccess }: { token: string; onSuccess: () => void
       data.append('issuingOrganization', formData.issuingOrganization);
       data.append('documentType', formData.documentType);
 
-      await api.uploadForm('/documents/upload', data, token);
+      const res = await api.uploadForm('/documents/upload', data, token);
+      setUploadedDoc(res);
       setFormData({ title: '', ownerName: '', issuingOrganization: '', documentType: 'Degree' });
       setFile(null);
       onSuccess();
@@ -747,16 +729,75 @@ function UploadView({ token, onSuccess }: { token: string; onSuccess: () => void
           </div>
         </form>
       </Card>
+
+      {uploadedDoc && (
+        <Card title="Document Uploaded Successfully" subtitle="Your document has been anchored on the blockchain">
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <CheckCircle2 className="text-emerald-600 shrink-0" size={22} />
+              <div>
+                <div className="text-sm font-bold text-emerald-800">Blockchain Anchoring Confirmed</div>
+                <div className="text-xs text-emerald-700 mt-0.5">Document hash recorded on-chain. Status: {uploadedDoc.status}</div>
+              </div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold mb-2">SHA-256 Authenticity Hash</div>
+              <div className="font-mono text-sm break-all bg-slate-50 border border-slate-100 rounded-xl p-3 text-slate-800 select-all">
+                {uploadedDoc.sha256Hash || uploadedDoc.document?.sha256Hash}
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Share this hash so others can independently verify your document on ChainVerify's public portal.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <UploadHashCopyButton hash={uploadedDoc.sha256Hash || uploadedDoc.document?.sha256Hash} />
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const hash = uploadedDoc.sha256Hash || uploadedDoc.document?.sha256Hash || '';
+                  const title = uploadedDoc.document?.title || uploadedDoc.title || 'Document';
+                  const subject = encodeURIComponent(`Document Authenticity Hash — ${title}`);
+                  const body = encodeURIComponent(
+                    `Hello,\n\nI am sharing the SHA-256 authenticity hash for the following document registered on ChainVerify:\n\nDocument: ${title}\nSHA-256 Hash: ${hash}\n\nYou can independently verify this document by visiting the ChainVerify public portal and searching for this hash.\n\nThis hash is cryptographically tied to the document and cannot be forged.`
+                  ).replace(/%0A/g, '%0D%0A');
+                  window.location.href = `mailto:?subject=${subject}&body=${body}`;
+                }}
+              >
+                <Mail size={16} /> Share via Email
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
     </motion.div>
   );
 }
 
 
 
+// Helper: copy hash with tick feedback
+function UploadHashCopyButton({ hash }: { hash?: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!hash) return null;
+  return (
+    <Button
+      variant="outline"
+      onClick={async () => {
+        await navigator.clipboard.writeText(hash);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      }}
+    >
+      {copied ? <><Check size={16} /> Copied!</> : <><Copy size={16} /> Copy Hash</>}
+    </Button>
+  );
+}
+
 function SearchView({ token }: { token: string }) {
   const [query, setQuery] = useState('');
   const [documents, setDocuments] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [viewingId, setViewingId] = useState<string | null>(null);
 
   const handleSearch = async () => {
     setLoading(true);
@@ -770,6 +811,30 @@ function SearchView({ token }: { token: string }) {
     }
   };
 
+  const isPreviewable = (fileName?: string) => {
+    if (!fileName) return false;
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    return ['pdf', 'png', 'jpg', 'jpeg', 'gif', 'txt'].includes(ext || '');
+  };
+
+  // Open document inline in new tab via authenticated URL (sets Content-Disposition: inline)
+  const handleView = (docId: string, fileName?: string) => {
+    if (!isPreviewable(fileName)) {
+      alert('Preview unavailable for this file type. Please use the Download button.');
+      return;
+    }
+    const base = API_BASE.replace(/\/api\/?$/, '');
+    // We cannot pass Bearer token via window.open, so we construct a direct link.
+    // The /public/view route serves verified docs inline without auth (already backend-supported).
+    window.open(`${base}/api/documents/public/${docId}/view`, '_blank', 'noopener');
+  };
+
+  // Download document as attachment
+  const handleDownload = (docId: string) => {
+    const base = API_BASE.replace(/\/api\/?$/, '');
+    window.open(`${base}/api/documents/public/${docId}/download`, '_blank', 'noopener');
+  };
+
   return (
     <motion.div key="search" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
       <div className="flex gap-3">
@@ -777,7 +842,7 @@ function SearchView({ token }: { token: string }) {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
           className="flex-1 px-4 py-3 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none"
           placeholder="Search by title, owner, hash, or organization..."
         />
@@ -785,27 +850,41 @@ function SearchView({ token }: { token: string }) {
       </div>
 
       {documents.length === 0 ? (
-        <div className="text-center py-12 text-slate-500">No documents found. Try searching or upload a new document.</div>
+        <div className="text-center py-12 text-slate-500">No documents found. Try a search above.</div>
       ) : (
         <Card>
           <div className="space-y-3">
             {documents.map((doc) => (
-              <div key={doc.id} className="p-4 border border-slate-100 rounded-xl hover:bg-slate-50">
-                <div className="flex items-center justify-between">
-                  <div>
+              <div key={doc.id} className="p-4 border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
                     <div className="font-bold text-slate-900">{doc.title}</div>
-                    <div className="text-xs text-slate-500 mt-1">Owner: {doc.ownerName} • Issuer: {doc.issuingOrganization}</div>
+                    <div className="text-xs text-slate-500 mt-1">Owner: {doc.ownerName} • Issuer: {doc.issuingOrganization} • Type: {doc.documentType}</div>
                     <div className="text-[10px] font-mono text-slate-400 mt-2 break-all">{doc.sha256Hash}</div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <Badge variant={doc.verificationStatus === 'Authentic Document' ? 'success' : doc.verificationStatus === 'Document Tampered' ? 'error' : 'warning'}>
-                      {doc.verificationStatus}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <Badge variant={doc.status === 'verified' ? 'success' : 'warning'}>
+                      {doc.status}
                     </Badge>
-                    {(doc.isAuthentic || doc.verificationStatus === 'Authentic Document') && (
-                      <div className="flex gap-2">
-                        <Button variant="outline" className="h-8 px-3 text-xs" onClick={() => window.open(`${API_BASE}/documents/public/${doc.id}/view`, '_blank')}>Read</Button>
-                        <Button variant="primary" className="h-8 px-3 text-xs" onClick={() => window.open(`${API_BASE}/documents/public/${doc.id}/download`, '_blank')}>Download</Button>
-                      </div>
+                    {doc.status === 'verified' && (
+                      <>
+                        <Button
+                          variant="outline"
+                          className="h-8 px-3 text-xs gap-1.5"
+                          onClick={() => handleView(doc.id, doc.originalFileName)}
+                          title="Preview document inline in browser"
+                        >
+                          <Eye size={13} /> View
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="h-8 px-3 text-xs gap-1.5"
+                          onClick={() => handleDownload(doc.id)}
+                          title="Download document file"
+                        >
+                          <Download size={13} /> Download
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -825,6 +904,7 @@ function ProfileView({ user, token, onUpdate, loading }: { user: User; token: st
     organization: user.organization || '',
     password: '',
   });
+  const [shareCopied, setShareCopied] = useState(false);
   
   useEffect(() => {
     setFormData((prev) => ({
@@ -836,21 +916,9 @@ function ProfileView({ user, token, onUpdate, loading }: { user: User; token: st
   }, [user]);
 
   const [showPassword, setShowPassword] = useState(false);
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const avatarRef = useRef<HTMLInputElement>(null);
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (avatarFile) {
-      const data = new FormData();
-      data.append('avatar', avatarFile);
-      try {
-        await api.uploadForm('/users/me/avatar', data, token);
-        setAvatarFile(null);
-      } catch (err) {
-        console.error('Avatar upload failed', err);
-      }
-    }
     onUpdate({
       name: formData.name,
       email: formData.email,
@@ -859,23 +927,31 @@ function ProfileView({ user, token, onUpdate, loading }: { user: User; token: st
     });
   };
 
+  const shareVerificationMessage = `ChainVerify Identity Reference\n\nName: ${user.name}\nRole: ${user.role}\nOrganization: ${user.organization || 'N/A'}\nEmail: ${user.email}\n\nTo verify any document issued or uploaded by this account, search the document hash on the ChainVerify public verification portal.`;
+
+  const handleShareViaEmail = () => {
+    const subject = encodeURIComponent(`ChainVerify Identity — ${user.name}`);
+    const body = encodeURIComponent(shareVerificationMessage);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  };
+
+  const handleCopyShareMessage = async () => {
+    await navigator.clipboard.writeText(shareVerificationMessage);
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 2000);
+  };
+
   return (
-    <motion.div key="profile" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="max-w-2xl mx-auto">
+    <motion.div key="profile" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="max-w-2xl mx-auto space-y-6">
       <Card title="My Profile" subtitle="Manage your account settings">
         <form onSubmit={handleUpdate} className="space-y-6 mt-8">
           <div className="mb-8 flex items-center gap-6">
-            <div className="relative group cursor-pointer" onClick={() => avatarRef.current?.click()}>
-              <img src={user.profilePictureUrl ? `${API_BASE.replace('/api', '')}${user.profilePictureUrl}?t=${new Date().getTime()}` : `https://picsum.photos/seed/${user.email}/120/120`} className="w-24 h-24 rounded-2xl border border-slate-200 object-cover" alt="Profile" />
-              <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="text-white text-xs font-bold">Change</span>
-              </div>
-            </div>
+            <Avatar user={user} size="xl" className="border-4 border-white shadow-lg" />
             <div>
               <div className="font-bold text-slate-900 text-lg">{user.name}</div>
               <div className="text-slate-500 text-sm">{user.role}</div>
-              {avatarFile && <div className="text-xs text-brand-600 mt-2 font-bold flex items-center gap-1"><CheckCircle2 size={12}/> {avatarFile.name} ready to upload</div>}
+              <div className="text-xs text-slate-400 mt-1">{user.email}</div>
             </div>
-            <input type="file" ref={avatarRef} className="hidden" accept="image/*" onChange={(e) => setAvatarFile(e.target.files?.[0] || null)} />
           </div>
 
           <div className="grid md:grid-cols-2 gap-6">
@@ -884,8 +960,9 @@ function ProfileView({ user, token, onUpdate, loading }: { user: User; token: st
               <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none" required />
             </div>
             <div>
-              <label className="text-sm font-bold text-slate-700 block mb-2">Email</label>
+              <label className="text-sm font-bold text-slate-700 block mb-2">Email Address</label>
               <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none" required />
+              <p className="text-xs text-slate-400 mt-1.5">Used as your identity reference for document ownership</p>
             </div>
           </div>
 
@@ -911,6 +988,129 @@ function ProfileView({ user, token, onUpdate, loading }: { user: User; token: st
             {loading ? 'Updating...' : 'Update Profile'}
           </Button>
         </form>
+      </Card>
+
+      {/* Share Verification Identity */}
+      <Card title="Share Verification Identity" subtitle="Let others know how to verify documents linked to your account">
+        <div className="space-y-4 mt-4">
+          <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
+            <pre className="text-xs text-slate-700 whitespace-pre-wrap font-mono leading-relaxed">{shareVerificationMessage}</pre>
+          </div>
+          <p className="text-xs text-slate-500">
+            Share this identity reference so recipients can confirm your role and use the public portal to verify any documents you have issued.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="outline" onClick={handleCopyShareMessage}>
+              {shareCopied ? <><Check size={16} /> Copied!</> : <><Copy size={16} /> Copy Message</>}
+            </Button>
+            <Button variant="outline" onClick={handleShareViaEmail}>
+              <Mail size={16} /> Share via Email
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </motion.div>
+  );
+}
+
+// ---- Standalone Audit Log View (fetches independently with pagination) ----
+function AuditLogView({ token, userRole }: { token: string; userRole: string }) {
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const LIMIT = 25;
+
+  const fetchLogs = async (p = 1) => {
+    setLoading(true);
+    try {
+      const res = await api.get(`/dashboard/audit?limit=${LIMIT}&page=${p}`, token);
+      setLogs(res.logs || []);
+      setPage(res.page?.page || 1);
+      setTotalPages(res.page?.totalPages || 1);
+      setTotal(res.page?.total || 0);
+    } catch (err) {
+      console.error('Failed to fetch audit logs:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchLogs(1); }, [token]);
+
+  const iconFor = (type: string) => {
+    if (type === 'success') return <ShieldCheck size={18} className="text-emerald-600" />;
+    if (type === 'error') return <AlertCircle size={18} className="text-rose-600" />;
+    if (type === 'warning') return <AlertCircle size={18} className="text-amber-600" />;
+    return <CheckCircle2 size={18} className="text-brand-600" />;
+  };
+  const bgFor = (type: string) => {
+    if (type === 'success') return 'bg-emerald-50';
+    if (type === 'error') return 'bg-rose-50';
+    if (type === 'warning') return 'bg-amber-50';
+    return 'bg-brand-50';
+  };
+
+  return (
+    <motion.div key="history" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+      <Card
+        title={userRole === 'Admin' ? 'System Audit Log' : 'My Activity Log'}
+        subtitle={userRole === 'Admin'
+          ? `All system activity — ${total} total entries`
+          : `Your personal activity history — ${total} entries`
+        }
+      >
+        <div className="flex justify-end mb-4">
+          <Button variant="outline" onClick={() => fetchLogs(page)} disabled={loading}>
+            {loading ? 'Loading...' : 'Refresh'}
+          </Button>
+        </div>
+
+        {loading && logs.length === 0 && (
+          <div className="text-center py-12 text-slate-400">Loading audit entries...</div>
+        )}
+
+        {!loading && logs.length === 0 && (
+          <div className="text-center py-12 text-slate-500">No audit log entries found.</div>
+        )}
+
+        <div className="space-y-3">
+          {logs.map((log) => (
+            <div
+              key={log.id}
+              className="flex items-start gap-4 p-4 rounded-2xl border border-slate-100 hover:bg-slate-50 transition-colors"
+            >
+              <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center shrink-0', bgFor(log.type))}>
+                {iconFor(log.type)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-bold text-slate-900 text-sm">{log.action}</div>
+                  <div className="text-xs text-slate-400 shrink-0">{formatDate(log.timestamp)}</div>
+                </div>
+                <div className="text-xs text-slate-500 mt-1">{log.details}</div>
+                {log.userName && (
+                  <div className="text-[10px] text-slate-400 mt-1 font-medium uppercase tracking-wide">By {log.userName}</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-100">
+            <span className="text-xs text-slate-500">Page {page} of {totalPages}</span>
+            <div className="flex gap-2">
+              <Button variant="outline" disabled={page <= 1 || loading} onClick={() => fetchLogs(page - 1)} className="h-8 px-3 text-xs">
+                Previous
+              </Button>
+              <Button variant="outline" disabled={page >= totalPages || loading} onClick={() => fetchLogs(page + 1)} className="h-8 px-3 text-xs">
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
     </motion.div>
   );

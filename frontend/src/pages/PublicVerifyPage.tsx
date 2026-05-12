@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Card, Button } from '../components/UI';
-import { PublicSearch } from '../components/PublicSearch';
+import { PublicVerifyFlow } from '../components/PublicVerifyFlow';
 
 interface PublicVerifyPageProps {
   onBack: () => void;
@@ -18,7 +18,7 @@ export const PublicVerifyPage: React.FC<PublicVerifyPageProps> = ({ onBack }) =>
               Verify Document Authenticity Without Signing In.
             </h1>
             <p className="mt-4 text-slate-600 max-w-2xl leading-relaxed">
-              Enter a document ID, SHA256 hash, or metadata query to confirm blockchain status and download verified documents in one place.
+              Search the public verified registry and confirm authenticity with a blockchain-backed record. Optional file copy checks are performed locally in your browser only.
             </p>
           </div>
           <Button variant="outline" className="w-full sm:w-auto" onClick={onBack}>
@@ -26,10 +26,11 @@ export const PublicVerifyPage: React.FC<PublicVerifyPageProps> = ({ onBack }) =>
           </Button>
         </div>
 
-        <Card title="Public Verification Form" subtitle="Search by ID, hash, title, owner, or issuer.">
-          <PublicSearch />
+        <Card title="Public Verify" subtitle="Search verified documents by ID or hash, then click VERIFY to confirm authenticity.">
+          <PublicVerifyFlow />
         </Card>
       </div>
     </div>
   );
 };
+

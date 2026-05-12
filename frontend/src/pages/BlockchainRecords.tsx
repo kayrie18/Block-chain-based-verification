@@ -98,7 +98,7 @@ export const BlockchainRecords: React.FC<BlockchainRecordsProps> = ({ token }) =
                       <Badge variant="success" className="font-mono text-[10px]">
                         {doc.blockchain?.transactionId?.substring(0, 15)}...
                       </Badge>
-                      <ExternalLink size={12} className="text-slate-300 hover:text-brand-500 cursor-pointer" title="View Transaction" />
+                      <ExternalLink size={12} className="text-slate-300 hover:text-brand-500 cursor-pointer" />
                     </div>
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-600">

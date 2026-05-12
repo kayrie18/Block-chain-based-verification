@@ -110,6 +110,7 @@ async function uploadDocument(req, res, next) {
         action: "Blockchain Anchoring Failed",
         details: `Document "${doc.title}" uploaded but blockchain anchoring failed: ${blockchainErr.message}`,
         type: "error",
+        actionType: "official",
         metadata: { documentId: doc._id },
       });
     }
@@ -118,8 +119,9 @@ async function uploadDocument(req, res, next) {
       userId: req.auth.userId,
       userName: req.user?.name,
       action: "Document Uploaded",
-      details: `Document "${doc.title}" uploaded and anchored on blockchain.`,
+      details: `Document "${doc.title}" uploaded${doc.status === 'verified' ? ' and anchored on blockchain' : ' (blockchain anchoring pending)'}.`,
       type: "info",
+      actionType: "official",
       metadata: { documentId: doc._id },
     });
 

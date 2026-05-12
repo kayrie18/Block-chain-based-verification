@@ -11,6 +11,11 @@ const auditLogSchema = new mongoose.Schema(
       enum: ["success", "error", "warning", "info"], 
       default: "info" 
     },
+    actionType: {
+      type: String,
+      enum: ["official", "temporary"],
+      default: "official"
+    },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: { createdAt: "timestamp", updatedAt: false } }

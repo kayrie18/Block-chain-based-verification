@@ -121,7 +121,7 @@ export const PublicSearch: React.FC = () => {
                       <div className="text-slate-900 font-semibold mt-2">{resultItem.issuingOrganization}</div>
                     </div>
                     <div>
-                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold">Uploaded By</div>
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold">Issuer / Uploader</div>
                       <div className="text-slate-900 font-semibold mt-2">{resultItem.ownerName}</div>
                     </div>
                     <div>
@@ -129,7 +129,7 @@ export const PublicSearch: React.FC = () => {
                       <div className="text-slate-900 font-semibold mt-2">{resultItem.uploadDate ? new Date(resultItem.uploadDate).toLocaleDateString() : 'N/A'}</div>
                     </div>
                     <div>
-                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold">Verification Status</div>
+                      <div className="text-xs uppercase tracking-[0.3em] text-slate-400 font-bold">Status</div>
                       <div className={`mt-2 font-semibold ${resultItem.isAuthentic ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {resultItem.isAuthentic ? '✓ Authentic' : '✗ Tampered'}
                       </div>

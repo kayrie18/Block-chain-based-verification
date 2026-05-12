@@ -57,7 +57,7 @@ async function getLogs(req, res, next) {
 /**
  * Helper to record an audit log entry internally
  */
-async function logAction({ userId, userName, action, details, type, metadata }) {
+async function logAction({ userId, userName, action, details, type, actionType, metadata }) {
   try {
     const entry = new AuditLog({
       userId,
@@ -65,6 +65,7 @@ async function logAction({ userId, userName, action, details, type, metadata }) 
       action,
       details,
       type: type || "info",
+      actionType: actionType || "official",
       metadata: metadata || {},
     });
     await entry.save();

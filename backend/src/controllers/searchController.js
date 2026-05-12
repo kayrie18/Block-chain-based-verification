@@ -75,6 +75,24 @@ async function searchDocuments(req, res, next) {
       filter["blockchain.transactionId"] = String(blockchainTx).trim();
     }
 
+    // Support frontend filtering: ?status=verified (or other cases)
+    const requestedStatus = typeof req.query?.status === 'string' ? req.query.status.trim() : null;
+    if (requestedStatus) {
+      const normalized = requestedStatus.toLowerCase();
+      if (normalized === 'verified') {
+        filter.status = 'verified';
+      } else if (normalized === 'tampered') {
+        // Tampered is derived from verification status; approximate by excluding verified
+        // (keeps behavior deterministic and avoids expensive on-chain checks here).
+        filter.$or = [{ status: { $ne: 'verified' } }, { isRevoked: true }];
+      } else if (normalized === 'pending') {
+        filter.status = 'pending';
+      } else {
+        // Fallback to direct match (supports other existing app statuses)
+        filter.status = requestedStatus;
+      }
+    }
+
     const uploadDate = {};
     if (uploadDateFrom) {
       const d = new Date(uploadDateFrom);
@@ -125,7 +143,7 @@ async function searchDocuments(req, res, next) {
     if (and.length) filter.$and = and;
 
     const projection =
-      "title ownerName issuingOrganization documentType uploadDate sha256Hash blockchain storageProvider ipfsCid uploadedBy status isRevoked expiryDate digitalSignature createdAt updatedAt";
+      "title ownerName issuingOrganization documentType uploadDate sha256Hash blockchain storageProvider ipfsCid uploadedBy status isRevoked expiryDate digitalSignature createdAt updatedAt originalFileName";
 
     const [dbItems, total] = await Promise.all([
       Document.find(filter).select(projection).sort(sort).skip(skip).limit(limit).lean().exec(),
@@ -195,19 +213,26 @@ async function searchDocuments(req, res, next) {
 
 async function publicSearchDocuments(req, res, next) {
   try {
-    const q = String(req.query?.q || "").trim();
+    const rawQ = String(req.query?.q || "");
+    const q = rawQ.trim();
     if (!q) {
       return res.status(400).json({ error: { message: "Search query is required." } });
     }
 
-    const filter = { status: "verified" };
-    const exactId = q.length === 24 && /^[0-9a-fA-F]{24}$/.test(q);
-    const exactHash = /^[0-9a-fA-F]{64}$/.test(q);
+    // UML enforcement: Public SEARCH returns metadata only for pre-verified documents.
+    // It must NEVER execute verification logic or read blockchain hashes during search.
 
-    if (exactId) {
+    const filter = { status: "verified" };
+
+    // Normalize SHA-256 input for exact hash lookup
+    const normalizedExactHash = q.replace(/\s+/g, "").toLowerCase();
+    const isExactId = q.length === 24 && /^[0-9a-fA-F]{24}$/.test(q);
+    const isExactHash = normalizedExactHash.length === 64 && /^[a-f0-9]{64}$/.test(normalizedExactHash);
+
+    if (isExactId) {
       filter._id = q;
-    } else if (exactHash) {
-      filter.sha256Hash = q.toLowerCase();
+    } else if (isExactHash) {
+      filter.sha256Hash = normalizedExactHash;
     } else {
       const escaped = escapeRegex(q);
       filter.$or = [
@@ -219,7 +244,7 @@ async function publicSearchDocuments(req, res, next) {
     }
 
     const projection =
-      "title ownerName issuingOrganization documentType uploadDate sha256Hash blockchain storageProvider ipfsCid status isRevoked expiryDate createdAt";
+      "title ownerName issuingOrganization documentType uploadDate sha256Hash blockchain storageProvider ipfsCid status isRevoked expiryDate createdAt originalFileName";
 
     const docs = await Document.find(filter).select(projection).limit(20).lean().exec();
 
@@ -227,54 +252,40 @@ async function publicSearchDocuments(req, res, next) {
       return res.status(404).json({ status: "Not Found", error: { message: "No verified document found matching this query." } });
     }
 
-    const mapped = await Promise.all(docs.map(async (doc) => {
-      let verificationStatus = computeVerificationStatus(doc);
-      let isAuthentic = false;
-
-      try {
-        const onChain = await getDocumentHashFromChain({ documentId: doc._id.toString(), fallbackSha256Hash: doc.sha256Hash });
-        const originalHash = normalizeSha256(onChain.sha256HashHex);
-        isAuthentic = compareHashesSecure(doc.sha256Hash, originalHash);
-        verificationStatus = isAuthentic ? verificationStatus : "Tampered";
-      } catch (err) {
-        verificationStatus = computeVerificationStatus(doc);
-      }
-
-      return {
-        id: String(doc._id),
-        title: doc.title,
-        ownerName: doc.ownerName,
-        issuingOrganization: doc.issuingOrganization,
-        documentType: doc.documentType,
-        uploadDate: doc.uploadDate,
-        sha256Hash: doc.sha256Hash,
-        status: doc.status,
-        isRevoked: doc.isRevoked,
-        expiryDate: doc.expiryDate,
-        blockchain: doc.blockchain || null,
-        storageProvider: doc.storageProvider,
-        ipfsCid: doc.ipfsCid,
-        verificationStatus,
-        isAuthentic,
-        createdAt: doc.createdAt,
-      };
+    const mapped = docs.map((doc) => ({
+      id: String(doc._id),
+      title: doc.title,
+      ownerName: doc.ownerName,
+      issuingOrganization: doc.issuingOrganization,
+      documentType: doc.documentType,
+      uploadDate: doc.uploadDate,
+      sha256Hash: doc.sha256Hash,
+      status: doc.status,
+      isRevoked: doc.isRevoked,
+      expiryDate: doc.expiryDate,
+      blockchain: doc.blockchain || null,
+      storageProvider: doc.storageProvider,
+      ipfsCid: doc.ipfsCid,
+      createdAt: doc.createdAt,
+      originalFileName: doc.originalFileName,
     }));
 
     await logAction({
       userId: null,
       userName: "Public User",
-      action: "Document Verification Search",
-      details: `Public verification search for query: ${q}. Found ${mapped.length} verified document(s).`,
+      action: "Document Metadata Search",
+      details: `Public metadata search for query: ${q}. Found ${mapped.length} verified document(s).`,
       type: "info",
       metadata: { query: q, count: mapped.length },
     });
 
     return res.status(200).json({ documents: mapped, total: mapped.length });
-
   } catch (err) {
     return next(err);
   }
 }
 
+
 module.exports = { searchDocuments, publicSearchDocuments };
+
 
